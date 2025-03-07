@@ -193,6 +193,67 @@ api.get(
 );
 
 api.post(
+  "/threads/state/batch",
+  zValidator(
+    "json",
+    z.object({
+      checkpoints: z.array(
+        z.object({
+          updates: z.array(
+            z.object({
+              values: z
+                .union([
+                  z.record(z.string(), z.unknown()),
+                  z.array(z.record(z.string(), z.unknown())),
+                ])
+                .nullish(),
+              as_node: z.string(),
+            }),
+          ),
+        }),
+      ),
+      thread_id: z
+        .string()
+        .uuid()
+        .describe("The ID of the thread. If not provided, an ID is generated.")
+        .optional(),
+      metadata: z
+        .object({})
+        .catchall(z.any())
+        .describe("Metadata for the thread.")
+        .optional(),
+      if_exists: z
+        .union([z.literal("raise"), z.literal("do_nothing")])
+        .optional(),
+    }),
+  ),
+  async (c) => {
+    // Create a new thread from a batch states
+    const payload = c.req.valid("json");
+    const newThread = await Threads.put(payload.thread_id || uuid4(), {
+      metadata: payload.metadata,
+      if_exists: payload.if_exists ?? "raise",
+    });
+
+    const config: RunnableConfig = {
+      configurable: { thread_id: newThread.thread_id },
+    };
+
+    for (const checkpoint of payload.checkpoints) {
+      await Threads.State.batch(
+        config,
+        checkpoint.updates.map((update) => ({
+          values: update.values,
+          asNode: update.as_node,
+        })),
+      );
+    }
+
+    return jsonExtra(c, newThread);
+  },
+);
+
+api.post(
   "/threads/:thread_id/history",
   zValidator("param", z.object({ thread_id: z.string().uuid() })),
   zValidator(
