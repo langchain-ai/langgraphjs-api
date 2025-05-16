@@ -2592,3 +2592,41 @@ it("custom routes - langgraph", async () => {
     },
   });
 });
+
+it("resumable streams", { timeout: 10_000 }, async () => {
+  const assistant = await client.assistants.create({ graphId: "agent" });
+  const thread = await client.threads.create();
+
+  type RunMetadata = { run_id: string; thread_id?: string };
+
+  let onRunCreated: ((params: RunMetadata) => void) | undefined = undefined;
+  const waitRun = new Promise<RunMetadata>((r) => (onRunCreated = r));
+
+  const stream = client.runs.stream(thread.thread_id, assistant.assistant_id, {
+    input: {
+      messages: [{ role: "human", content: "input" }],
+      sleep: { steps: 3, ms: 1000 },
+    },
+    streamMode: ["values", "custom"],
+    config: globalConfig,
+
+    onRunCreated,
+  });
+
+  const [join, source] = await Promise.all([
+    (async () => {
+      const [{ thread_id, run_id }] = await Promise.all([
+        waitRun,
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+
+      return gatherIterator(
+        client.runs.joinStream(thread_id, run_id, { lastEventId: "-1" }),
+      );
+    })(),
+
+    gatherIterator(stream),
+  ]);
+
+  expect(join).toEqual(source);
+});

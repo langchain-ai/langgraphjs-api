@@ -204,7 +204,7 @@ api.post("/runs/stream", zValidator("json", schemas.RunCreate), async (c) => {
       for await (const { event, data } of Runs.Stream.join(
         run.run_id,
         undefined,
-        { cancelOnDisconnect, ignore404: true },
+        { cancelOnDisconnect, lastEventId: "0", ignore404: true },
         c.var.auth,
       )) {
         await stream.writeSSE({ data: serialiseAsDict(data), event });
@@ -214,6 +214,41 @@ api.post("/runs/stream", zValidator("json", schemas.RunCreate), async (c) => {
     }
   });
 });
+
+// TODO: port to Python API
+api.get(
+  "/runs/:run_id/stream",
+  zValidator("param", z.object({ run_id: z.string().uuid() })),
+  zValidator(
+    "query",
+    z.object({ cancel_on_disconnect: schemas.coercedBoolean.optional() }),
+  ),
+  async (c) => {
+    const { run_id } = c.req.valid("param");
+    const query = c.req.valid("query");
+
+    const lastEventId = c.req.header("Last-Event-ID") || undefined;
+
+    return streamSSE(c, async (stream) => {
+      const cancelOnDisconnect = query.cancel_on_disconnect
+        ? getDisconnectAbortSignal(c, stream)
+        : undefined;
+
+      try {
+        for await (const { id, event, data } of Runs.Stream.join(
+          run_id,
+          undefined,
+          { cancelOnDisconnect, lastEventId, ignore404: true },
+          c.var.auth,
+        )) {
+          await stream.writeSSE({ id, data: serialiseAsDict(data), event });
+        }
+      } catch (error) {
+        logError(error, { prefix: "Error streaming run" });
+      }
+    });
+  },
+);
 
 api.post("/runs/wait", zValidator("json", schemas.RunCreate), async (c) => {
   // Wait Stateless Run
@@ -292,6 +327,7 @@ api.post(
       auth: c.var.auth,
       headers: c.req.raw.headers,
     });
+    c.header("Content-Location", `/threads/${thread_id}/runs/${run.run_id}`);
     return jsonExtra(c, run);
   },
 );
@@ -309,6 +345,7 @@ api.post(
       auth: c.var.auth,
       headers: c.req.raw.headers,
     });
+    c.header("Content-Location", `/threads/${thread_id}/runs/${run.run_id}`);
     return streamSSE(c, async (stream) => {
       const cancelOnDisconnect =
         payload.on_disconnect === "cancel"
@@ -316,13 +353,13 @@ api.post(
           : undefined;
 
       try {
-        for await (const { event, data } of Runs.Stream.join(
+        for await (const { id, event, data } of Runs.Stream.join(
           run.run_id,
           thread_id,
-          { cancelOnDisconnect },
+          { cancelOnDisconnect, lastEventId: "0" },
           c.var.auth,
         )) {
-          await stream.writeSSE({ data: serialiseAsDict(data), event });
+          await stream.writeSSE({ id, data: serialiseAsDict(data), event });
         }
       } catch (error) {
         logError(error, { prefix: "Error streaming run" });
@@ -344,6 +381,8 @@ api.post(
       auth: c.var.auth,
       headers: c.req.raw.headers,
     });
+
+    c.header("Content-Location", `/threads/${thread_id}/runs/${run.run_id}`);
     return waitKeepAlive(c, Runs.join(run.run_id, thread_id, c.var.auth));
   },
 );
@@ -407,18 +446,20 @@ api.get(
     // Stream Run Http
     const { thread_id, run_id } = c.req.valid("param");
     const { cancel_on_disconnect } = c.req.valid("query");
+    const lastEventId = c.req.header("Last-Event-ID") || undefined;
+
     return streamSSE(c, async (stream) => {
       const signal = cancel_on_disconnect
         ? getDisconnectAbortSignal(c, stream)
         : undefined;
 
-      for await (const { event, data } of Runs.Stream.join(
+      for await (const { id, event, data } of Runs.Stream.join(
         run_id,
         thread_id,
-        { cancelOnDisconnect: signal },
+        { cancelOnDisconnect: signal, lastEventId },
         c.var.auth,
       )) {
-        await stream.writeSSE({ data: serialiseAsDict(data), event });
+        await stream.writeSSE({ id, data: serialiseAsDict(data), event });
       }
     });
   },
