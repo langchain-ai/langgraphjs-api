@@ -24,7 +24,12 @@ api.get("/info", (c) => {
     return undefined;
   })();
   return c.json({
-    flags: { assistants: true, crons: false, langsmith: !!langsmithTracing },
+    flags: {
+      assistants: true,
+      crons: false,
+      langsmith: !!langsmithTracing,
+      langsmith_tracing_replicas: true,
+    },
   });
 });
 
