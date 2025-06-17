@@ -6,7 +6,7 @@ import {
   type StateSnapshot,
 } from "@langchain/langgraph";
 import type { Pregel } from "@langchain/langgraph/pregel";
-import { Client as LangSmithClient, getProjectName } from "langsmith";
+import { Client as LangSmithClient, getDefaultProjectName } from "langsmith";
 import { getLangGraphCommand } from "./command.mjs";
 import { getGraph } from "./graph/load.mjs";
 import { checkLangGraphSemver } from "./semver/index.mjs";
@@ -202,13 +202,13 @@ export async function* streamState(
     ? new LangChainTracer({
         replicas: [
           [
-            run.kwargs?.config?.configurable?.langsmith_project,
+            run.kwargs?.config?.configurable?.langsmith_project as string,
             {
               reference_example_id:
                 run.kwargs?.config?.configurable?.langsmith_example_id,
             },
           ],
-          [getProjectName(), undefined],
+          [getDefaultProjectName(), undefined],
         ],
       })
     : undefined;
