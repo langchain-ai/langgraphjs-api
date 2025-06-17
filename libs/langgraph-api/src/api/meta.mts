@@ -1,23 +1,20 @@
 import { Hono } from "hono";
-import { createRequire } from "module";
+import * as fs from "node:fs/promises";
+import * as url from "node:url";
 
 const api = new Hono();
 
-// Get the version from package.json using require.resolve
-const require = createRequire(import.meta.url);
+// Get the version using the same pattern as semver/index.mts
+const packageJsonPath = url.fileURLToPath(
+  new URL("../../package.json", import.meta.url),
+);
+
 let version: string;
 try {
-  // Try to resolve the package.json from the installed package
-  const packageJson = require("@langchain/langgraph-api/package.json");
+  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
   version = packageJson.version;
 } catch {
-  // Fallback for development environment
-  try {
-    const packageJson = require("../../../package.json");
-    version = packageJson.version;
-  } catch {
-    console.warn("Could not determine version of langgraph-api");
-  }
+  console.warn("Could not determine version of langgraph-api");
 }
 
 // read env variable
